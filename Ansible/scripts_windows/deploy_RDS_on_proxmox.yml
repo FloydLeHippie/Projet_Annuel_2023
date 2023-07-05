@@ -1,0 +1,55 @@
+---
+- name: Déploiement et configuration RDS sur le serveur broker
+  hosts: SRV-RDS
+  tasks:
+    - name: Configuration des paramètres du Bureau à distance
+      ansible.windows.win_powershell:
+        script: |
+          Add-WindowsFeature RDS-RD-Server
+          Import-Module RemoteDesktop
+
+    - name: Copie du package de déploiement broker RDS dans le répertoire du serveur
+      win_copy:
+        src: "{{ playbook_dir }}/broker.ps1"
+        dest: C:\Users\Administrateur\Documents\broker.ps1
+
+    - name: Lancer le script de déploiement du broker RDS
+      win_shell: |
+        .\Documents\broker.ps1
+
+    - name: Reboot du serveur
+      ansible.windows.win_reboot:
+
+    - name: Création du certificat https dans les autorités de certificat racine de confiance
+      win_shell: |
+        $rootCA = New-SelfSignedCertificate -Subject "CN=FAVB" `
+        -KeyExportPolicy Exportable `
+        -KeyUsage CertSign,CRLSign,DigitalSignature `
+        -KeyLength 2048 `
+        -KeyUsageProperty All `
+        -KeyAlgorithm 'RSA' `
+        -HashAlgorithm 'SHA256' `
+        -Provider "Microsoft Enhanced RSA and AES Cryptographic Provider" `
+        -NotAfter (Get-Date).AddYears(10)
+        $SelfSignCert = New-SelfSignedCertificate -Subject "CN=favb.local" `
+        -Signer $rootCA `
+        -KeyLength 2048 `
+        -KeyExportPolicy Exportable `
+        -DnsName favb.local `
+        -KeyAlgorithm 'RSA' `
+        -HashAlgorithm 'SHA256' `
+        -Provider "Microsoft Enhanced RSA and AES Cryptographic Provider" `
+        -NotAfter (Get-Date).AddDays(350)
+        $certFile = Export-Certificate -Cert $SelfSignCert -FilePath C:\Users\Administrateur\Documents\rdweb.cer
+
+    - name: Importation du certificat dans les autorités de certificat racine de confiance
+      win_shell: |
+        $certPath = "C:\Users\Administrateur\Documents\rdweb.cer"
+        $cert = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2($certPath)
+        $store = New-Object System.Security.Cryptography.X509Certificates.X509Store("Root", "LocalMachine")
+        $store.Open("ReadWrite")
+        $store.Add($cert)
+        $store.Close()
+
+    - name: Reboot du serveur
+      ansible.windows.win_reboot:

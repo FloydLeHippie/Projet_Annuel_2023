@@ -1,0 +1,80 @@
+---
+- name: Déploiement et configuration Active Directory sur le serveur AD
+  hosts: SRV-AD
+  tasks:
+    - name: Modifier le nom du serveur
+      win_hostname:
+        name: srv-wad-test-01
+      when: true
+
+    - name: Run PowerShell commands to prepare the DC
+      ansible.windows.win_powershell:
+        script: |
+          Add-WindowsFeature AD-Domain-Services
+          Set-TimeZone -Name "Romance Standard Time"
+      when: true
+
+    - name: Installer le rôle ADDS et le configurer avec les options minimales
+      ansible.windows.win_domain:
+        dns_domain_name: favb.local
+        safe_mode_password: ProjetAnnuel2023!
+      register: domain_install
+      when: true
+
+    - name: Reboot après modification
+      ansible.windows.win_reboot:
+      when: domain_install.reboot_required
+
+    - name: Reboot du serveur
+      ansible.windows.win_reboot:
+      when: domain_install.reboot_required
+
+    - name: Créer une OU RDS à la racine du contrôleur de domaine
+      ansible.windows.win_shell: New-ADOrganizationalUnit -Name "RDS" -Path "DC=favb,DC=local"
+      when: domain_install.reboot_required
+
+    - name: Créer le groupe RDS dans l'OU RDS
+      microsoft.ad.group:
+        name: group_rds
+        scope: global
+        path: "OU=RDS,DC=favb,DC=local"
+        state: present
+
+    - name: Créer l'utilisateur AD Florian
+      win_domain_user:
+        name: Florian
+        password: "ProjetAnnuel2023!"
+        state: present
+        groups:
+          - Utilisateurs du domaine
+          - group_rds
+
+    - name: Créer l'utilisateur AD Jean-Annas
+      win_domain_user:
+        name: Jean-Annas
+        password: "ProjetAnnuel2023!"
+        state: present
+        groups:
+          - Utilisateurs du domaine
+          - group_rds
+
+    - name: Créer l'utilisateur AD Benjamin
+      win_domain_user:
+        name: Benjamin
+        password: "ProjetAnnuel2023!"
+        state: present
+        groups:
+          - Utilisateurs du domaine
+          - group_rds
+
+    - name: Créer l'utilisateur AD Victor
+      win_domain_user:
+        name: Victor
+        password: "ProjetAnnuel2023!"
+        state: present
+        groups:
+          - Utilisateurs du domaine
+          - group_rds
+
+    - name: Ajouter le groupe_rds aux autorisations d'accès à distance
+      win_shell: Add-ADGroupMember -Identity "Utilisateurs du Bureau à distance" -Members "group_rds"
